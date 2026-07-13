@@ -1,77 +1,57 @@
-# token-rich-types — minimal POC
+# token-rich-types
 
-A tiny typed language for UI where **the agent and the program are one thing**.
-The only edit is *refinement*: a component rebuilds itself, and the type
-contract is the guardrail that keeps every self-edit safe.
-
-See `FEATURES.txt` for the full design. This POC implements the spine:
-components, subtyping, holes, ASCII rendering, stable ids, and a model-backed
-`prompt` primitive.
+A tiny typed language for web pages where the program and the agent building
+it are one thing: components are prompted, refine themselves, talk (delegate ⇘
+/ escalate ⇖ / refuse / scream), answer questions, and keep their own history —
+with the typechecker as the guardrail on every move. Design doc: `FEATURES.txt`.
 
 ## Run
 
-Racket lives at `/Applications/Racket v9.2/bin/racket` (not on `PATH`). From this
-directory:
-
 ```sh
-"/Applications/Racket v9.2/bin/racket" repl.rkt
+racket ui.rkt     # viewer → http://localhost:8484
+racket repl.rkt   # terminal REPL
+racket bench.rkt  # benchmark: list | run | rate | report | show
 ```
 
-The xAI key is read from `.env` (git-ignored). `prompt` calls `grok-build-0.1`.
+Racket binary: `/Applications/Racket v9.2/bin/racket` if not on `PATH`.
+xAI key/model/effort come from `.env` (git-ignored).
 
-## The language
+## Viewer
 
-```
-(text   "…")            : Text
-(header 1-6 "…")        : Header        ; Header <: Text
-(button "…")            : Button
-(stack  C C …)          : Stack         ; covariant in children
-(hole   T)              : T             ; a TODO — top of T's lattice
-```
+The page renders as a real website. Hover for a devtools-style chip
+(`id · witness ⊑ contract`), click to select, then **prompt** (write) or
+**query** (read) it; no selection targets the page. **build** replaces the
+page with one labeled hole and lets it construct itself, section by section,
+while you watch. Components pulse ochre while thinking, with bubbles showing
+their instructions; accepted refinements flash green and scroll into view as
+they swap in; screams and refusals arrive as toasts; the right panel streams
+the protocol.
 
-Subtyping: `Header <: Text`, every component `<: Component`, a stack value
-`<: Stack`, stacks covariant in their children. A node's **contract** (its spec)
-is the loose kind it was created at; `prompt` may narrow the witness but must
-stay a subtype of the contract.
-
-## REPL commands
+## REPL
 
 ```
-:show              render the page to ASCII
-:tree              show ids, witness types, and contracts (⊑)
-:get <id>          inspect one node
-:prompt <id> <…>   refine that node by prompting it (it rebuilds itself)
-:root <…>          refine the whole page
-:new <s-expr>      replace the page
-:help / :quit
+:show [width]      ASCII screenshot        :tree     ids, types, contracts
+:get <id>          inspect a node          :pin <id> <Type>  tighten contract
+:prompt <id> <…>   refine a node           <id>.prompt(<…>)  dotted form
+:query <id> <…>    ask a node a question   <id>.query(<…>)   dotted form
+:root <…>          prompt the page         :ask <…>  query the page
+:build <goal>      page builds itself from one hole
+:journal           the program's history   :screams  extension proposals
+:lexicon           the live vocabulary — prompt a words node to grow the language
+:new <s-expr>      replace the page        :help :quit
 ```
 
-## Demo
-
-```
-» :prompt c3 make the button say Subscribe Now
-· attempt 1/3 → grok…
-✓ Button ⊑ Button
-
-# Max's Burgers
-The best burgers in Flagstaff.
-[ Subscribe Now ]
-```
-
-Refining a `Header`'s contract toward a button is *rejected* and retried until
-Grok returns a real subtype — the contract is never violated. That is idiom 2
-(spec vs. witness): you cannot subtype your way out of the spec.
+`:help` also prints the component syntax. Every prompt shows the internal
+conversation: requests, replies, typecheck verdicts, hops, journaling.
 
 ## Files
 
 | file | role |
 |------|------|
-| `core.rkt`  | components, types, subtyping, holes, render, the node store |
-| `grok.rkt`  | xAI transport (reads `.env`) |
-| `agent.rkt` | the `prompt` primitive: propose → typecheck `<:` → accept/retry |
-| `repl.rkt`  | interactive REPL |
-
-## Not yet (see FEATURES.txt)
-
-`query` (recursive read), type-directed routing, SMT-backed refinements, the
-Style/Behavior facets, and WASM codegen. This POC is the kernel they attach to.
+| `core.rkt`   | nodes, vocabulary tables, types/subtyping, holes, store+journal |
+| `layout.rkt` | box-model layout → ASCII screenshot |
+| `grok.rkt`   | xAI transport (reads `.env`) |
+| `agent.rkt`  | the protocol: prompt/dispatch/cascade (write), query (read) |
+| `repl.rkt`   | terminal REPL |
+| `ui.rkt` + `ui.html` | the viewer |
+| `bench.rkt`  | 50-task benchmark with human rating |

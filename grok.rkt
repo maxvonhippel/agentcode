@@ -27,15 +27,25 @@
 
 (define (model) (or (getenv "XAI_MODEL") "grok-build-0.1"))
 
+;; Only sent when set: grok-build-0.1 rejects it (thinking is baked in), but
+;; e.g. grok-3-mini honors "low"/"high".
+(define (reasoning-effort)
+  (define v (getenv "XAI_REASONING_EFFORT"))
+  (and v (not (string=? v "")) v))
+
 (define API-URL "https://api.x.ai/v1/chat/completions")
 
-;; Send a system+user message, return the assistant's text content.
+;; Send a system+user message, return the assistant's content string.
 (define (grok-complete system user #:temp [temp 0])
-  (define payload
+  (define base
     (hasheq 'model (model)
             'temperature temp
             'messages (list (hasheq 'role "system" 'content system)
                             (hasheq 'role "user"   'content user))))
+  (define payload
+    (if (reasoning-effort)
+        (hash-set base 'reasoning_effort (reasoning-effort))
+        base))
   (define data (string->bytes/utf-8 (jsexpr->string payload)))
   (define headers (list "Content-Type: application/json"
                         (string-append "Authorization: Bearer " (api-key))))

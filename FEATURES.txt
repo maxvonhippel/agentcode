@@ -14,6 +14,72 @@ specification language, (b) the agent's navigation map, and (c) the guardrail
 that keeps every self-edit type-safe. The agent may do anything as long as the
 result type-checks as a subtype of the contract it was handed.
 
+## Status (2026-07-10)
+
+Legend: [x] working  [~] partial  [ ] not started. Two design rules hold
+everywhere: NO MAGIC STRINGS (every enumeration is a validated keyword table
+in core.rkt; strings hold only content) and NO FORCED PLANNING (bare strings
+are texts anywhere; roles are head-words; metadata drops in anywhere).
+
+  [~] 1  Refine is the only write — one action per prompted node
+         (refine/delegate/escalate/refuse/scream), typechecked <: contract,
+         spliced at that id, else rejected and retried with the type error.
+         Refs keep untouched subtrees (and ids) verbatim. Output is NOT
+         grammar-constrained — guided decoding measurably degraded the model;
+         the typechecker is the guardrail, not the decoder.
+  [~] 2  Spec vs. witness — contracts default to Component; :pin tightens
+         (requires the witness to already satisfy). Widening not implemented.
+  [~] 3  Query, the recursive read — a queried node sees only a SHALLOW view
+         (own content, or children as id:type index lines), answers or asks
+         specific children, then synthesizes; budgeted by depth and ask-rounds;
+         never mutates, never journals. Prompt does not yet gather its context
+         via query (it still pastes the page render — fine at current scale).
+  [~] 4  Token-rich types are the map — ids address, briefs carry purpose,
+         query routes by child type; no type-similarity search yet.
+  [ ] 5  Open product of facets — one hardcoded facet (shape).
+  [x] 6  Identity is intrinsic — stable ids; refs preserve identity and
+         contracts across rewrites.
+  [x] 7  One language, no embedded sublanguages — validated keywords
+         everywhere; rich text is runs+marks, not strings-in-strings.
+         HTML-parity basis: runs/marks/links; (embed Media url alt);
+         (input ValueType label) with String LongString Number Bool Date Time
+         Color Password File Email Tel Url Search (OneOf …) (ManyOf …)
+         (Range lo hi); semantic container roles as types (Nav <: Row,
+         Olist <: List <: Stack, …); (title …) and (meta Key …) as ordinary
+         components.
+  [~] 8  Observation closes the loop — ASCII screenshot + the viewer renders
+         real HTML. No state values or symbolic exploration yet.
+  [~] 9  The sharpie — in the viewer: hover-inspect, click-select, prompt;
+         selection is DOM-based, not yet a renderer-emitted region map.
+  [~] 10 Decidable core + proof escape — lattice subtyping only; no SMT.
+  [ ] 11 Locality over global planning — no names/imports yet.
+  [x] 12 Self-reference — recursion is the default semantics of prompt: new
+         briefed holes cascade (dispatch, typecheck, swap in, re-render) until
+         none remain; pre-existing holes are deliberate TODOs. :build is
+         prompt on an empty page.
+  [x] 13 The scream — a component can declare the language inexpressive, with
+         diagnosis + concrete extension proposal, journaled in the tree.
+  [x] 14 The program carries its own memory — the store is a node
+         (store page journal lexicon); dispatch appends every outcome (Refined
+         | Refused | Screamed | GaveUp) as a typed entry ((Entry Screamed) <:
+         Entry). Store/journal/entry have no surface or JSON form, so history
+         cannot be fabricated or edited by refinement; it survives page swaps.
+         :journal / :screams read it.
+  [~] 15 The program carries its own language — the four word categories
+         (Marks Media Values Metas) live in the store as words nodes whose
+         TYPE is their word set. Evolution law is the subtype relation:
+         (Words C ws) <: (Words C vs) iff vs ⊆ ws, and each node's contract is
+         the base set — so prompting the lexicon can only ADD words, never
+         remove them. Validators and the model's system prompt read the live
+         lexicon, so a grown word is immediately speakable and typecheckable;
+         it renders with its category's default until a renderer learns it.
+         Lexicon edits journal like any refinement — the language's change
+         log. Still host-side: container/kind tables and render rules.
+
+Future: type-directed routing (4), facets (5), state (8), region map (9),
+SMT (10), imports (11), wasm, style facet, behavior facet, multi-page store,
+container/render rules as store data (the rest of 15).
+
 ## The idioms that matter
 
 1. REFINE IS THE ONLY WRITE.
@@ -77,10 +143,13 @@ result type-checks as a subtype of the contract it was handed.
    State is supplied, or left free and symbolically explored / fuzzed. Render is
    the feedback signal: prompt -> refine -> observe -> prompt.
 
-9. CLICK IS A PRIMITIVE.
+9. CLICK IS A PRIMITIVE — THE SHARPIE.
    The renderer emits an id->region map, so a click resolves to its component in
    O(1). Right-click -> prompt box -> refine -> re-render is therefore built in,
-   not bolted on. The same id->region map powers symbolic interaction.
+   not bolted on. The interaction idiom this unlocks is new: you circle the bit
+   you want changed (a click, an id) and SAY the change — a blend of prompting
+   and coding where selection replaces navigation and utterance replaces
+   editing. The same id->region map powers symbolic interaction.
 
 10. DECIDABLE CORE + PROOF ESCAPE.
     Subtyping is decidable on a core fragment: structural subtyping plus
@@ -98,111 +167,45 @@ result type-checks as a subtype of the contract it was handed.
     else retried within a budget. The program carries the means of its own typed
     inspection and modification. Code and coder are one term.
 
-## Demonstrations (each proves a benefit)
+13. HONEST INCAPACITY IS FIRST-CLASS (the scream).
+    A prompted component answers with exactly one action: refine (typechecked),
+    delegate (route down), escalate (push up), refuse (should not be done), or
+    SCREAM — a structured declaration that the LANGUAGE ITSELF cannot express
+    what was asked, with a diagnosis and a concrete extension proposal. Screams
+    are recorded: the language's self-authored issue tracker, and the selection
+    pressure for its own evolution (the endgame: the system benchmarks candidate
+    language extensions born from its own screams).
 
-- Right-click self-modify (the showcase): click resolves to a component, type a
-  prompt, the component refines itself, the page re-renders — and the edit is
-  rejected if it breaks the contract.
-- Recursive query: ask the page "what does this claim about pricing?"; the answer
-  is synthesized by descending only into the pricing subtree, never reading the
-  rest.
-- Hole-driven top-down build: start from `page : Page = ?`, refine downward;
-  `print` shows real progress at every step.
-- Type-directed routing: prompt the *page*, the *header* changes, because the
-  type told the agent where the banner belongs.
-- Provable refactor: edit a shared component; every use site still checks — no
-  broken pages, guaranteed by the subtyping obligation.
-- Render-in-the-loop: ASCII shows overflow; "fits-within-dims" becomes an
-  obligation the agent discharges by re-refining.
-- Manual proof: "responsive across a width range" when SMT can't close it —
-  agent supplies a proof term.
-- Deployed self-refinement: the built page, running as WASM in a browser, calls
-  its host model endpoint to refine a component live.
+14. THE PROGRAM CARRIES ITS OWN MEMORY.
+    The store is a node: (store page journal). The enforcement machinery — and
+    nothing else — appends every outcome to the journal as a typed entry.
+    History has no surface form, so no refinement can fabricate or edit it, and
+    it outlives what the page becomes. The journal is where the scream log
+    lives, and where a future evolution loop reads its selection pressure.
 
-## Implementation plan (methodical, phased; each phase has a done-when)
+## Roadmap (the parts that are still design, not code)
 
-P0  CORE CALCULUS (on paper). Term language; type language; the subtyping
-    judgment; holes as typed metavariables; bidirectional checking. Make the
-    kernel FACET-PARAMETRIC: a component type is an intersection of facets,
-    shipping with Shape x Layout x State; Style and Behavior are future facets,
-    not special cases. Fix the deterministic-kernel / agentic-host seam:
-    deterministic facets are pure and WASM-bound; `prompt`/`query` are host
-    imports.
-    Done when: subtyping + hole-filling rules are written and hand-checked, and
-    adding a toy fourth facet requires no kernel change.
+- PROMPT BUILT ON QUERY: replace paste-the-render context with query-gathered
+  context once pages outgrow a single window. Done when a prompt on a large
+  page reads only the slices it needs.
+- TYPE-DIRECTED ROUTING: match an instruction against child types before asking
+  a model. Done when page.prompt lands deep edits without a delegate call.
+- MULTI-PAGE STORE: (store page… journal) with link navigation between roots.
+  Done when :build grows a coherent multi-page site.
+- STATE: input values and details open/closed as print(dims, state) parameters;
+  symbolic/fuzzed exploration when unspecified.
+- REGION MAP: the renderer emits id->region so a click IS the sharpie circle
+  (the viewer currently selects via the DOM).
+- PROOF ESCAPE: SMT for layout/refinement constraints ("fits within dims");
+  manual proof terms where undecidable.
+- FACETS: component types become an open product (Shape & Layout & State, then
+  Style, then Behavior); kernel facet-parametric; adding a facet requires no
+  kernel change. Style answers the standing rainbow scream.
+- WASM: compile the deterministic kernel; prompt/query become host imports; a
+  deployed page keeps refining itself in the browser.
+- SELF-EVOLUTION: a loop that reads Screamed entries from the journal, proposes
+  a vocabulary-table row, and benchmarks the extended language — the language
+  maintains itself. Requires the vocabulary tables to live in the store.
 
-P1  STORE & IDENTITY. ID-addressed node graph: {id, type, term|hole, parent}.
-    Ops: get(id), children(id), refine(id, term). Serialize the graph; no FS.
-    Done when: a tree round-trips through the store and refine() rejects a
-    non-subtype.
-
-P2  TYPECHECKER. Bidirectional checker over the decidable fragment; per-facet
-    subtyping; holes; refine = replace node with a term that must check <: the
-    node's type.
-    Done when: holes drive checking and bad refinements are rejected with a
-    located error.
-
-P3  RENDERER / OBSERVATION. `print(dims)` -> ASCII via a small typed layout core
-    (stack, row, box, text) with constraint annotations; render folds the visual
-    facets; image backend later. Pure in (component, dims, state).
-    Done when: a hand-built page prints stable ASCII and emits an id->region map.
-
-P4  QUERY & RECURSION (read primitive). `C.query(q) -> A`: recursive, type-guided
-    descent — route by type, sub-query subtrees, aggregate; read-only. Subsumes
-    type-search and routing.
-    Done when: a page-level question is answered by synthesizing sub-answers from
-    the right descendants, reading only those.
-
-P5  PROMPT (write primitive, built on query). Hand the model the locus's type +
-    queried context + render; it proposes a refined term; typecheck as subtype;
-    loop-to-budget.
-    Done when: a page-level prompt gathers context via query, lands on the correct
-    descendant, and produces a checked subtype.
-
-P6  INTERACTION SURFACE. Click->component from the id->region map; right-click->
-    prompt box->refine->re-render. The showcase demo end to end.
-    Done when: clicking a rendered region and prompting modifies that component.
-
-P7  PROOF ESCAPE & STATE. Wire SMT for refinement constraints; manual proof terms
-    for the rest. Typed state machines; symbolic / fuzz exploration in `print`.
-    Done when: one SMT-discharged constraint and one hand-proved constraint both
-    pass, and a stateful component prints across explored states.
-
-P8  LAZY NAMES / IMPORTS. Use-before-declare; unresolved names are obligations
-    discharged later; spec-revision (idiom 2) re-checks dependents.
-    Done when: a program with forward references checks, and widening a shared
-    type forces and reports re-proof at every use site.
-
---- Extension phases (after the core lands; enabled by idiom 5) ---
-
-P9  COMPILE TO WASM. Lower the deterministic kernel (type-erased terms, layout,
-    render, state) to WASM; expose `prompt`/`query` as host-function imports. A
-    deployed page runs in-browser and, given a model endpoint, still self-refines.
-    Done when: a built page renders in a browser from its WASM module and a
-    host-backed prompt round-trips.
-
-P10 STYLE FACET (CSS-equivalent). Add Style as a facet: a typed lattice of visual
-    properties (color, spacing, type scale) with subtyping and constraints
-    (contrast, spacing rhythm); fold into render. No strings.
-    Done when: a component is restyled by refining its Style facet, with a
-    contrast constraint discharged by SMT — and the kernel was not modified.
-
-P11 BEHAVIOR FACET (JS-equivalent). Add Behavior as a facet: typed state machines
-    / typed effects; refinement = simulation; fold into interaction and into
-    `print`'s state exploration; compile to WASM event handlers.
-    Done when: an interactive component's behavior is refined, simulated in
-    `print`, and runs in the browser — kernel unmodified.
-
-## Open decisions (resolve as we build, not before)
-
-- Surface syntax: a small uniform tree (typed-Lisp-ish) keeps idiom 7 honest and
-  the AST agent-legible. Defer prettiness.
-- "Subtype of a value": formalized as type(C') <: type(C); singleton/refinement
-  types let a value stand in for its own tightest type when useful.
-- Query answer-types: whether `query` returns free text, a typed view, or
-  `query[T](q) -> T` constrained to a facet/type. Lean toward typed views so
-  answers compose as context.
-- Host seam protocol: how a WASM page calls the model for `prompt`/`query`
-  (import signature, budget, retry/typecheck loop location).
-- State exploration policy under under-specified `print`: symbolic first, fuzz as
-  fallback; decide per-component by the state type's size.
+Open questions: widening semantics (spec revision re-proves dependents); the
+host seam protocol for WASM; state exploration policy (symbolic vs fuzz).
