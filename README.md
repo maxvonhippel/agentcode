@@ -55,3 +55,23 @@ conversation: requests, replies, typecheck verdicts, hops, journaling.
 | `repl.rkt`   | terminal REPL |
 | `ui.rkt` + `ui.html` | the viewer |
 | `bench.rkt`  | 50-task benchmark with human rating |
+| `record.rkt` + `view.rkt` | record a real run to a cassette (event stream + tree snapshots) |
+| `player.html` + `capture.mjs` | replay a cassette; capture it to gif/mp4 |
+
+## Animations
+
+The clips in `gifs/` are **recordings of real runs**, not illustrations.
+`record.rkt` drives the same `dispatch`/`cascade` as the live tool against the
+real model and saves the event stream (with a tree snapshot after every applied
+change) as a cassette. `player.html` replays a cassette on a virtual clock, and
+every type, message, verdict, and page shown is the system's actual output. The
+visual styling, the beat timing, and the phase captions are a presentation layer
+— it is a stylized replay, not a screen capture, and not real-time.
+
+```sh
+racket record.rkt build "<goal>" name   # or: edit | escalate  → cassettes/*.json
+node capture.mjs <name> [--fps N --width W --speed S]   # → gifs/<name>.{gif,mp4}
+python3 -m http.server 8777             # then open player.html?c=<name> to scrub live
+```
+
+Prefer the mp4s (tiny, identical); gifs are large for long, high-motion clips.

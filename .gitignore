@@ -1,3 +1,8 @@
 .env
 compiled/
 bench-runs/
+cassettes/
+node_modules/
+frames/
+gifs/
+probe/

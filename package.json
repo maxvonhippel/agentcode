@@ -1,0 +1,15 @@
+{
+  "name": "token-rich-types",
+  "version": "1.0.0",
+  "description": "A tiny typed language for web pages where the program and the agent building it are one thing: components are prompted, refine themselves, talk (delegate ⇘ / escalate ⇖ / refuse / scream), answer questions, and keep their own history — with the typechecker as the guardrail on every move. Design doc: `FEATURES.txt`.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

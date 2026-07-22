@@ -11,7 +11,7 @@
 (require racket/match racket/string racket/list racket/file racket/runtime-path
          json net/url
          web-server/servlet-env web-server/http
-         "core.rkt" "agent.rkt")
+         "core.rkt" "agent.rkt" "view.rkt")
 
 (define PORT 8484)
 (define-runtime-path UI-HTML "ui.html")
@@ -37,14 +37,6 @@
 (define seq (box 0))
 (define busy? (box #f))
 
-;; Emit payloads carry symbols; JSON wants strings. Keys stay symbols (jsexpr).
-(define (jsonify v)
-  (cond [(symbol? v) (symbol->string v)]
-        [(hash? v) (for/hasheq ([(k x) (in-hash v)]) (values k (jsonify x)))]
-        [(list? v) (map jsonify v)]
-        [(or (string? v) (boolean? v) (number? v)) v]
-        [else (format "~a" v)]))
-
 (define (push! type payload)
   (locked
    (λ ()
@@ -59,57 +51,8 @@
   (locked (λ () (reverse (takef (unbox events)
                                 (λ (e) (> (hash-ref e 'seq) n)))))))
 
-;; ---------------------------------------------------------------------------
-;; Tree -> client JSON. Every node carries id + witness type + contract so the
-;; client can draw the devtools chip. href/marks are omitted when absent.
-;; ---------------------------------------------------------------------------
-(define (run->ui r)
-  (let* ([h (hasheq 'text (run-str r))]
-         [h (if (pair? (run-marks r))
-                (hash-set h 'marks (map symbol->string (run-marks r)))
-                h)]
-         [h (if (run-href r) (hash-set h 'href (run-href r)) h)])
-    h))
-
-(define (vt->ui vt)
-  (match vt
-    [(cons 'OneOf opts)  (hasheq 'oneOf opts)]
-    [(cons 'ManyOf opts) (hasheq 'manyOf opts)]
-    [(list 'Range lo hi) (hasheq 'range (list lo hi))]
-    [(? symbol?)         (symbol->string vt)]))
-
-(define (node->ui n)
-  (define base
-    (match (node-body n)
-      [(list 'text runs)      (hasheq 'kind "text" 'runs (map run->ui runs))]
-      [(list 'heading l runs) (hasheq 'kind "heading" 'level l
-                                      'runs (map run->ui runs))]
-      [(list 'button s)       (hasheq 'kind "button" 'label s)]
-      [(list 'embed m u a)    (hasheq 'kind "embed" 'media (symbol->string m)
-                                      'url u 'alt a)]
-      [(list 'input vt l)     (hasheq 'kind "input" 'value (vt->ui vt) 'label l)]
-      [(list 'divider)        (hasheq 'kind "divider")]
-      [(list 'title s)        (hasheq 'kind "title" 'text s)]
-      [(list 'meta k s)       (hasheq 'kind "meta" 'key (symbol->string k)
-                                      'content s)]
-      [(list 'hole b)         (hasheq 'kind "hole" 'brief (or b ""))]
-      [(cons tag cs)          (hasheq 'kind (symbol->string tag)
-                                      'children (map node->ui cs))]))
-  (hash-set* base 'id (node-id n)
-             'wtype (type->string (type-of n))
-             'spec (type->string (node-spec n))))
-
-(define (entry->json e)
-  (hasheq 'id (node-id e)
-          'kind (symbol->string (entry-kind e))
-          'at (entry-at e)
-          'instruction (entry-instruction e)
-          'notes (entry-notes e)))
-
-(define (journal-json) (map entry->json (journal-entries (unbox page))))
-
 (define (push-tree!)
-  (push! 'tree (hasheq 'tree (node->ui (page-of (unbox page))))))
+  (push! 'tree (hasheq 'tree (node->view (page-of (unbox page))))))
 
 ;; ---------------------------------------------------------------------------
 ;; A prompt job: dispatch, then the cascade for any holes it spawned.
@@ -184,8 +127,8 @@
      (response/full 200 #"OK" (current-seconds) TEXT/HTML-MIME-TYPE '()
                     (list (file->bytes UI-HTML)))]
     [(equal? path "tree")
-     (json-response (hasheq 'tree (node->ui (page-of (unbox page)))
-                            'journal (journal-json)
+     (json-response (hasheq 'tree (node->view (page-of (unbox page)))
+                            'journal (journal->view (unbox page))
                             'busy (unbox busy?)))]
     [(equal? path "events")
      (define since (or (string->number (query-ref req 'since "0")) 0))
