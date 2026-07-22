@@ -36,6 +36,7 @@
 (define events (box '()))          ; newest first
 (define seq (box 0))
 (define busy? (box #f))
+(define last-goal (box ""))        ; most recent build goal, for /review
 
 (define (push! type payload)
   (locked
@@ -82,10 +83,21 @@
   (set-box! busy? #f)
   (push! 'job-done (hasheq)))
 
-;; Build = the page becomes one briefed hole, then the cascade fills it while
-;; the viewer watches. Journal and lexicon survive.
+;; The root reviews the rendered page and dispatches corrective edits until it
+;; approves; each change re-renders in the viewer.
+(define (do-review goal)
+  (define emit (λ (tag p) (push! tag p)))
+  (define-values (final summary)
+    (review (unbox page) goal #:emit emit
+            #:on-change (λ (nr _o) (set-box! page nr) (push-tree!))))
+  (set-box! page final)
+  (push! 'review-summary summary))
+
+;; Build = the page becomes one briefed hole, the cascade fills it while the
+;; viewer watches, then the root reviews the result. Journal and lexicon survive.
 (define (run-build goal)
   (with-handlers ([exn:fail? (λ (e) (push! 'error (hasheq 'message (exn-message e))))])
+    (set-box! last-goal goal)
     (set-box! page (store-with-page (unbox page)
                                     (parse (list 'hole 'Component goal))))
     (push-tree!)
@@ -96,7 +108,14 @@
                               (push-tree!))
                #:on-blocked (λ (_h rr) (push-outcome! rr))))
     (set-box! page final)
-    (push! 'summary summary))
+    (push! 'summary summary)
+    (do-review goal))
+  (set-box! busy? #f)
+  (push! 'job-done (hasheq)))
+
+(define (run-review goal)
+  (with-handlers ([exn:fail? (λ (e) (push! 'error (hasheq 'message (exn-message e))))])
+    (do-review goal))
   (set-box! busy? #f)
   (push! 'job-done (hasheq)))
 
@@ -145,6 +164,21 @@
         (set-box! busy? #t)
         (push! 'job-start (hasheq 'target "page" 'instruction goal 'op "build"))
         (thread (λ () (run-build goal)))
+        (json-response (hasheq 'ok #t))])]
+    [(and post? (equal? path "review"))
+     (define body (with-handlers ([exn:fail? (λ (_) #f)])
+                    (string->jsexpr
+                     (bytes->string/utf-8 (or (request-post-data/raw req) #"")))))
+     (define g (and (hash? body) (string-trim (hash-ref body 'goal ""))))
+     (define goal (cond [(non-empty-string? (or g "")) g]
+                        [(non-empty-string? (unbox last-goal)) (unbox last-goal)]
+                        [else "make this a coherent, complete, well-structured page"]))
+     (cond
+       [(unbox busy?) (json-response (hasheq 'error "busy — one job at a time") 409)]
+       [else
+        (set-box! busy? #t)
+        (push! 'job-start (hasheq 'target "page" 'instruction goal 'op "review"))
+        (thread (λ () (run-review goal)))
         (json-response (hasheq 'ok #t))])]
     [(and post? (member path '("prompt" "query")))
      (define body (with-handlers ([exn:fail? (λ (_) #f)])

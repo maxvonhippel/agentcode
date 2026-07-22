@@ -22,7 +22,9 @@ The page renders as a real website. Hover for a devtools-style chip
 (`id · witness ⊑ contract`), click to select, then **prompt** (write) or
 **query** (read) it; no selection targets the page. **build** replaces the
 page with one labeled hole and lets it construct itself, section by section,
-while you watch. Components pulse ochre while thinking, with bubbles showing
+while you watch, then the root **reviews** the rendered result and dispatches
+corrective edits until it approves (the **review** button re-runs that on
+demand). Components pulse ochre while thinking, with bubbles showing
 their instructions; accepted refinements flash green and scroll into view as
 they swap in; screams and refusals arrive as toasts; the right panel streams
 the protocol.
@@ -35,7 +37,8 @@ the protocol.
 :prompt <id> <…>   refine a node           <id>.prompt(<…>)  dotted form
 :query <id> <…>    ask a node a question   <id>.query(<…>)   dotted form
 :root <…>          prompt the page         :ask <…>  query the page
-:build <goal>      page builds itself from one hole
+:build <goal>      page builds itself from one hole (then reviews itself)
+:review [goal]     the root inspects the rendered page and fixes what it dislikes
 :journal           the program's history   :screams  extension proposals
 :lexicon           the live vocabulary — prompt a words node to grow the language
 :new <s-expr>      replace the page        :help :quit

@@ -25,7 +25,7 @@
   (or (getenv "XAI_API_KEY")
       (error 'grok "XAI_API_KEY not set — put it in .env")))
 
-(define (model) (or (getenv "XAI_MODEL") "grok-build-0.1"))
+(define (model) (or (getenv "XAI_MODEL") "grok-4.3"))
 
 ;; Only sent when set: grok-build-0.1 rejects it (thinking is baked in), but
 ;; e.g. grok-3-mini honors "low"/"high".

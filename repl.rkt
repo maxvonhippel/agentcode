@@ -8,6 +8,7 @@
 ;; Holds the STORE: (store page journal). The journal is the program's own
 ;; memory — screams and outcomes live in the tree, not in this REPL.
 (define page (box #f))
+(define last-goal (box ""))        ; the most recent build goal, for :review
 
 (define default-page
   '(stack
@@ -38,6 +39,7 @@
       "  :root <…>          refine the whole page (its root node)"
       "  :pin <id> <Type>   tighten a node's contract, e.g. :pin c1 Heading"
       "  :build <goal>      seed the page as one hole and WATCH IT BUILD ITSELF"
+      "  :review [goal]     the root inspects the rendered page and fixes what it dislikes"
       "  :screams           screams from the journal (language-extension proposals)"
       "  :journal           the program's own history (screams + outcomes, in-tree)"
       "  :lexicon           the language's live vocabulary (+word = grown);"
@@ -136,7 +138,18 @@
              (hash-ref p 'question))]
     [(answer)
      (printf "  = ~a answers:\n" (hash-ref p 'target))
-     (print-wrapped "      " (hash-ref p 'text))]))
+     (print-wrapped "      " (hash-ref p 'text))]
+    [(review-start)
+     (printf "\n══ review round ~a/~a ══ the root inspects the whole page\n"
+             (hash-ref p 'round) (hash-ref p 'rounds))]
+    [(review-verdict)
+     (case (hash-ref p 'verdict)
+       [("approve") (printf "  ✓ approved: ~a\n" (hash-ref p 'note ""))]
+       [("revise")
+        (printf "  ✎ revise — ~a edit(s):\n" (length (hash-ref p 'edits)))
+        (for ([e (in-list (hash-ref p 'edits))])
+          (print-wrapped "     " (format "~a: ~a" (hash-ref e 'id)
+                                         (hash-ref e 'instruction))))])]))
 
 ;; ---------------------------------------------------------------------------
 ;; The journal — read from the tree; dispatch is the only writer.
@@ -306,18 +319,43 @@
                    (string-append "+" (symbol->string s))))   ; grown words
              " "))))
 
+;; The root reviews the whole rendered page and dispatches corrective edits
+;; until it approves (or the round budget is spent).
+(define (run-review goal)
+  (parameterize ([verbose? #f])
+    (define-values (final summary)
+      (review (unbox page) goal #:emit pp-event
+              #:on-change (λ (nr o)
+                            (set-box! page nr)
+                            (printf "\n  ✓ ~a := ~a\n" (outcome-at o) (outcome-info o))
+                            (cmd-show))))
+    (set-box! page final)
+    (printf "\n■ review ~a after ~a round~a.\n\n"
+            (hash-ref summary 'status) (hash-ref summary 'rounds)
+            (if (= 1 (hash-ref summary 'rounds)) "" "s"))
+    (cmd-show)))
+
+(define (cmd-review rest)
+  (define g (string-trim rest))
+  (run-review (cond [(non-empty-string? g) g]
+                    [(non-empty-string? (unbox last-goal)) (unbox last-goal)]
+                    [else "make this a coherent, complete, well-structured page"])))
+
 ;; The self-building page — just `prompt` on an empty page: seed one briefed
-;; hole and let the cascade run.
+;; hole, let the cascade run, then the root reviews the result and corrects it.
 (define (cmd-build goal)
   (cond
     [(string=? (string-trim goal) "") (displayln "usage: :build <goal>")]
     [else
+     (set-box! last-goal (string-trim goal))
      (set-box! page (store-with-page (unbox page)
                                      (parse (list 'hole 'Component (string-trim goal)))))
      (printf "seeded the page as a single hole:\n\n")
      (cmd-show)
      (parameterize ([verbose? #f])
-       (fill-holes!))]))
+       (fill-holes!))
+     (printf "\n──────── the root now reviews the rendered page ────────\n")
+     (run-review (unbox last-goal))]))
 
 ;; ---------------------------------------------------------------------------
 ;; Dispatch loop
@@ -350,6 +388,7 @@
        [("root" "r")             (do-prompt (node-id (page-of (unbox page))) rest)]
        [("pin")                  (cmd-pin rest)]
        [("build")                (cmd-build rest)]
+       [("review")               (cmd-review rest)]
        [("screams")              (cmd-screams)]
        [("journal")              (cmd-journal)]
        [("lexicon" "lex")        (cmd-lexicon)]

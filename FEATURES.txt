@@ -75,8 +75,16 @@ are texts anywhere; roles are head-words; metadata drops in anywhere).
          it renders with its category's default until a renderer learns it.
          Lexicon edits journal like any refinement — the language's change
          log. Still host-side: container/kind tables and render rules.
+  [x] 16 The program reviews its own result — `review` shows the ROOT the whole
+         page as it renders (idiom 8's ASCII screenshot) plus the id:type tree,
+         and it either approves or returns a list of targeted {id, instruction}
+         edits. Each edit runs through the same typechecked dispatch (refine or
+         escalate), new holes cascade, then the root re-inspects — up to a round
+         budget. Runs automatically after :build, or on demand (:review, the
+         viewer's review button). The observe→correct loop, closed.
 
-Future: type-directed routing (4), facets (5), state (8), region map (9),
+Future: image (not ASCII) review for a truly multimodal eye, type-directed
+routing (4), facets (5), state (8), region map (9),
 SMT (10), imports (11), wasm, style facet, behavior facet, multi-page store,
 container/render rules as store data (the rest of 15).
 

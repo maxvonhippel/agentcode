@@ -67,7 +67,10 @@ body{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
   box-shadow:3px 3px 0 #9a6d1c;padding:8px 22px;font-size:13px;font-weight:700;
   cursor:pointer}
 #build:hover{background:#9a6d1c;color:var(--paper)}
-#go:disabled,#ask:disabled,#build:disabled{opacity:.4;cursor:not-allowed}
+#review{background:var(--panel2);color:var(--sand);border:2px solid var(--line);
+  padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer}
+#review:hover{border-color:var(--ochre);color:var(--ochre)}
+#go:disabled,#ask:disabled,#build:disabled,#review:disabled{opacity:.4;cursor:not-allowed}
 
 /* ── the rendered page ("website" look) ─────────────────── */
 #canvas h1,#canvas h2,#canvas h3,#canvas h4,#canvas h5,#canvas h6{
@@ -185,6 +188,7 @@ body{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
   <button id="go">prompt</button>
   <button id="ask">query</button>
   <button id="build" title="replace the page with one hole and watch it build itself">build</button>
+  <button id="review" title="the root inspects the whole rendered page and fixes what it dislikes">review</button>
 </div>
 <div id="hoverchip"></div>
 <div id="toasts"></div>
@@ -526,6 +530,17 @@ function applyEvent(ev){
     case "journal":
       logE("sys","✎ journaled "+ev.kind+" at "+ev.at);
       break;
+    case "review-start":
+      logE("sys","◎ review round "+ev.round+"/"+ev.rounds+" — the root inspects the whole page");
+      break;
+    case "review-verdict":
+      if(ev.verdict==="approve"){logE("ok","✓ root approves: "+trunc(ev.note||"",120));}
+      else{logE("hop","✎ root revises — "+ev.edits.length+" edit(s)");
+        for(const e of ev.edits)logE("req","   "+e.id+": "+trunc(e.instruction,120));}
+      break;
+    case "review-summary":
+      logE("sys","◎ review "+ev.status+" after "+ev.rounds+" round(s)");
+      break;
     case "query-request":
       setThinking(ev.target,ev.question);
       logE("req","? "+ev.target+" ← "+trunc(ev.question,140));
@@ -556,6 +571,7 @@ function setStatus(working){
   $("#go").disabled=working;
   $("#ask").disabled=working;
   $("#build").disabled=working;
+  $("#review").disabled=working;
 }
 
 /* ── wire ───────────────────────────────────────────────── */
@@ -582,6 +598,14 @@ $("#build").onclick=async()=>{
     body:JSON.stringify({goal})});
   if(r.ok){$("#inp").value="";select(null);}
   else{const e=await r.json();toast("cannot build",e.error||r.status);}
+};
+$("#review").onclick=async()=>{
+  if(busy)return;
+  const goal=$("#inp").value.trim();   // optional override; else server uses last build goal
+  const r=await fetch("/review",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({goal})});
+  if(r.ok)$("#inp").value="";
+  else{const e=await r.json();toast("cannot review",e.error||r.status);}
 };
 
 async function poll(){

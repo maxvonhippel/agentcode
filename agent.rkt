@@ -16,7 +16,7 @@
 
 (require racket/match racket/string racket/list json
          "core.rkt" "grok.rkt" "layout.rkt")
-(provide dispatch prompt-once cascade query-node (struct-out outcome))
+(provide dispatch prompt-once cascade query-node review (struct-out outcome))
 
 (struct outcome (kind root at info) #:transparent)
 
@@ -57,10 +57,12 @@
   (cond
     [(string? r) r]
     [(hash? r)
+     (define txt (hash-ref r 'text #f))
+     (unless (string? txt) (error 'run "a run object needs a string \"text\": ~s" r))
      (define marks (for/list ([m (in-list (hash-ref r 'marks '()))])
                      (sym-in m (lexicon-words 'Marks) 'mark)))
      (define base
-       (for/fold ([x (hash-ref r 'text "")]) ([m (in-list (reverse marks))])
+       (for/fold ([x txt]) ([m (in-list (reverse marks))])
          (list m x)))
      (define href (hash-ref r 'href #f))
      (if (and (string? href) (non-empty-string? href))
@@ -652,9 +654,10 @@ EOF
       [else
        (case (hash-ref r 'action #f)
          [("answer")
-          (define text (hash-ref r 'text ""))
-          (emit 'answer (hasheq 'target id 'text text))
-          text]
+          (define text (hash-ref r 'text #f))
+          (cond
+            [(string? text) (emit 'answer (hasheq 'target id 'text text)) text]
+            [else (retry "answer needs a string \"text\"")])]
          [("ask")
           (cond
             [final? (retry "asked when it had to answer")]
@@ -710,3 +713,89 @@ EOF
           ;; adopt the outcome root anyway: the page is unchanged but the
           ;; journal now records the refusal/scream/give-up
           (loop (outcome-root r) (add1 step) (cons (node-id h) blocked))])])))
+
+;; --------------------------------------------------------------------------
+;; `review` — the root looks at the WHOLE rendered page and dispatches
+;; corrective edits until it approves or the round budget is spent. This closes
+;; the loop: the program observes its own rendered result and fixes what it
+;; doesn't like, every correction going through the same typechecked dispatch.
+;; --------------------------------------------------------------------------
+(define REVIEW-SYSTEM #<<EOF
+You are the ROOT of a web page and its editor-in-chief. You are shown the whole
+page exactly as it renders, plus its component tree (id : type). Judge whether it
+fully and coherently satisfies the goal. Reply with exactly ONE action as a bare
+JSON object — no prose, no code fences.
+
+  {"response":{"action":"approve","note":"…"}}
+      The page satisfies the goal and reads well. You are done.
+  {"response":{"action":"revise","edits":[{"id":"cX","instruction":"…"},…]}}
+      Only for REAL problems: missing pieces, wrong or thin content, broken
+      structure, ugly layout. Each edit names an existing component id (from the
+      tree) and a precise instruction; that component will refine itself (or
+      escalate to its parent) under the typechecker. Do not invent busywork — if
+      the page is already good, APPROVE. Prefer a few high-value edits.
+EOF
+)
+
+(define (review-user root goal)
+  (string-append
+   "Goal: " goal "\n\n"
+   "The page as it renders now:\n" (render-page root) "\n\n"
+   "Component tree (id : witness-type ⊑ contract):\n" (tree (page-of root)) "\n\n"
+   "Does this satisfy the goal? Approve, or list targeted edits by id."))
+
+(define (promptable-node? root id)
+  (define n (and (string? id) (find-node root id)))
+  (and n (not (system-node? n))))
+
+(define (valid-edits root raw)
+  (if (list? raw)
+      (for/list ([e (in-list raw)]
+                 #:when (and (hash? e)
+                             (promptable-node? root (hash-ref e 'id #f))
+                             (non-empty-string? (hash-ref e 'instruction ""))))
+        (cons (hash-ref e 'id) (hash-ref e 'instruction)))
+      '()))
+
+;; `on-change` fires with (new-root outcome) after each applied edit or fill.
+(define (review root goal #:rounds [rounds 3] #:tries [tries 2]
+                #:emit [emit void] #:on-change [on-change void])
+  (let loop ([root root] [rnd 1])
+    (emit 'review-start (hasheq 'round rnd 'rounds rounds))
+    (define content
+      (parameterize ([current-lexicon (lexicon-hash root)])
+        (grok-complete REVIEW-SYSTEM (review-user root goal))))
+    (emit 'review-response (hasheq 'round rnd 'content content))
+    (define r (let ([j (extract-json content)]) (and (hash? j) (hash-ref j 'response #f))))
+    (define action (and (hash? r) (hash-ref r 'action #f)))
+    (cond
+      [(equal? action "approve")
+       (emit 'review-verdict (hasheq 'round rnd 'verdict "approve"
+                                     'note (hash-ref r 'note "")))
+       (values root (hasheq 'status 'approved 'rounds rnd))]
+      [(equal? action "revise")
+       (define edits (valid-edits root (hash-ref r 'edits #f)))
+       (emit 'review-verdict
+             (hasheq 'round rnd 'verdict "revise"
+                     'edits (map (λ (e) (hasheq 'id (car e) 'instruction (cdr e))) edits)))
+       (cond
+         [(null? edits)                      ; nothing actionable — treat as done
+          (values root (hasheq 'status 'approved 'rounds rnd))]
+         [else
+          (define edited
+            (for/fold ([root root]) ([e (in-list edits)])
+              (cond
+                [(promptable-node? root (car e))   ; a prior edit may have removed it
+                 (define o (dispatch root (car e) (cdr e) #:tries tries #:emit emit))
+                 (on-change (outcome-root o) o)
+                 (outcome-root o)]
+                [else root])))
+          ;; an edit may have introduced briefed holes; fill them before re-judging
+          (define-values (filled _sum)
+            (cascade edited #:emit emit
+                     #:on-refined (λ (nr o) (on-change nr o))))
+          (if (>= rnd rounds)
+              (values filled (hasheq 'status 'budget 'rounds rnd))
+              (loop filled (add1 rnd)))])]
+      [else                                  ; malformed reply: stop, don't spin
+       (values root (hasheq 'status 'unclear 'rounds rnd))])))
